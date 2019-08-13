@@ -1,43 +1,65 @@
-require 'typed_ruby/exceptions'
-require 'typed_ruby/boolean'
+require 'typed_ruby/argument_validator'
 
 class TypedRuby::TypedClass
 
-  def self.deft method_name, *types, return_type:
+  def self.deft method_name, *expected_types, return_type:, private_method: false, &block
     define_method(method_name) do |*arguments|
-      if arguments.count < types.count
-        TypedRuby::ExceptionHandler.invalid_argument_length(
-          types.count,
-          arguments.count
-        )
+      method_identifier = "#{self.class.to_s}##{method_name}"
+
+      TypedRuby::Validator.validate_argument_length(
+        method_identifier,
+        arguments,
+        expected_types
+      )
+
+      TypedRuby::Validator.validate_argument_types(
+        method_identifier,
+        arguments,
+        expected_types
+      )
+
+      return TypedRuby::Validator.validate_return_value(
+        method_identifier,
+        return_type,
+      ) do
+        instance_exec(*arguments, &block)
       end
 
-      arguments.each_with_index do |arg, index| 
-        if types[index].nil?
-          TypedRuby::ExceptionHandler.missing_type_definition(index)
-        end
+    end
 
-        next if types[index].to_s == 'any'
-
-        if !arg.is_a?(types[index])
-          TypedRuby::ExceptionHandler.wrong_argument_type(
-            types[index],
-            arg.class
-          )
-        end
-      end
-
-      return_value = yield(*arguments)
-
-      if !return_value.is_a?(return_type)
-        TypedRuby::ExceptionHandler.wrong_return_type(
-          return_type,
-          return_value.class
-        )
-      end
-
-      return return_value
+    if private_method
+      send(:private, method_name)
     end
   end
 
+  def self.self_deft method_name, *expected_types, return_type:, private_method: false, &block
+    define_singleton_method(method_name) do |*arguments|
+
+      method_identifier = "#{self.class.to_s}::#{method_name}"
+
+      if private_method
+        self.class.send(:private, method_name)
+      end
+
+      TypedRuby::Validator.validate_argument_length(
+        method_identifier,
+        arguments,
+        expected_types
+      )
+
+      TypedRuby::Validator.validate_argument_types(
+        method_identifier,
+        arguments,
+        expected_types
+      )
+
+      return TypedRuby::Validator.validate_return_value(
+        method_identifier,
+        return_type
+      ) do
+        block.call(*arguments)
+      end
+
+    end
+  end
 end
